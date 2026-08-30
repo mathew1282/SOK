@@ -2,7 +2,7 @@
 // LINIE
 // - teren: Szlak / Osobowa / Towarowa
 // - stacjonarny: Dyżurny zmiany / Komendant
-// (kolory UI pod tryb jasny i ciemny)
+// Soft Pastel + kolory UI pod tryb jasny i ciemny
 // =====================================
 
 let liniePatrolModes = {};
@@ -52,9 +52,9 @@ function renderLinie() {
 
         <!-- Rząd 1: Szlak | Osobowa | Towarowa -->
         <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
-            ${fieldBox("Szlak", "szlak", "np. 274", "#3b82f6")}
-            ${fieldBox("Osobowa", "osobowa", "np. 275", "#22c55e")}
-            ${fieldBox("Towarowa", "towarowa", "np. 276", "#f59e0b")}
+            ${fieldBox("Szlak", "szlak", "np. 274", "#60a5fa")}
+            ${fieldBox("Osobowa", "osobowa", "np. 275", "#34d399")}
+            ${fieldBox("Towarowa", "towarowa", "np. 276", "#fb923c")}
         </div>
 
         <!-- Rząd 2: Dyżurny | Komendant -->
@@ -103,10 +103,10 @@ function renderLinie() {
                         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px; background:var(--bg-light); border:1px solid var(--border); border-radius:8px; margin-bottom:6px; color:var(--text);">
                             <span style="flex:1; min-width:120px; font-size:13px; font-weight:600; color:var(--text);">${escapeHtml(personName)}</span>
                             <button type="button" class="btn-primary"
-                                style="${role === "komendant" ? "background:#db2777; outline:2px solid #f472b6;" : "background:var(--border-mid);"}"
+                                style="${role === "komendant" ? "background:#f472b6; outline:2px solid #f9a8d4;" : "background:var(--border-mid);"}"
                                 onclick="setLiniePersonRole(${index}, '${escapeAttr(personName)}', 'komendant')">Komendant</button>
                             <button type="button" class="btn-primary"
-                                style="${role === "dyzurny" ? "background:#7c3aed; outline:2px solid #a78bfa;" : "background:var(--border-mid);"}"
+                                style="${role === "dyzurny" ? "background:#a78bfa; outline:2px solid #c4b5fd;" : "background:var(--border-mid);"}"
                                 onclick="setLiniePersonRole(${index}, '${escapeAttr(personName)}', 'dyzurny')">Dyżurny</button>
                         </div>`;
                     });
@@ -237,10 +237,11 @@ function buildAllPersonTables(today) {
 }
 
 function createPersonTableTeren(person, today) {
+    // Soft Pastel – mocniejsze odcienie pod biały tekst w Excelu
     const rows = [
-        { bg: "#1e40af", line: appState.linie?.szlak || "" },
-        { bg: "#166534", line: appState.linie?.osobowa || "" },
-        { bg: "#854d0e", line: appState.linie?.towarowa || "" }
+        { bg: "#3b82f6", line: appState.linie?.szlak || "" },   // Szlak
+        { bg: "#10b981", line: appState.linie?.osobowa || "" }, // Osobowa
+        { bg: "#f97316", line: appState.linie?.towarowa || "" } // Towarowa
     ];
 
     let body = rows.map(r => `
@@ -271,7 +272,7 @@ function createPersonTableStacjonarny(person, today, role) {
     const isDyzurny = role === "dyzurny";
     const lineNum = isDyzurny ? (appState.linie?.dyzurny || "") : (appState.linie?.komendant || "");
     const roleLabel = isDyzurny ? "Dyżurny zmiany" : "Komendant";
-    const bg = isDyzurny ? "#7c3aed" : "#be185d";
+    const bg = isDyzurny ? "#8b5cf6" : "#ec4899";
 
     return `
     <div style="margin-bottom:20px;">
