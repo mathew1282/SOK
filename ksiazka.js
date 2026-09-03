@@ -68,6 +68,40 @@ function escapeHtml(str) {
         .replace(/"/g, "&quot;");
 }
 
+/** Usuwa kropki / bullet-y z początku linii (zwykły tekst) */
+function stripBulletsPlain(text) {
+    return String(text || "")
+        .split("\n")
+        .map(line => line.replace(/^[\s•·.\-–—]+/, "").trimStart())
+        .join("\n")
+        .trim();
+}
+
+/**
+ * Bezpieczne HTML do wyświetlenia w Książce:
+ * - zachowuje <b> <strong> <u> <i> <br>
+ * - usuwa kropki / bullet-y
+ * - resztę escapuje
+ */
+function formatKsiazkaTekstHtml(raw) {
+    let s = String(raw || "");
+
+    // Jeśli to zwykły tekst bez tagów – escapuj i zamień enter na <br>
+    if (!/<(?:b|strong|u|i|br|div|p|span)\b/i.test(s)) {
+        s = escapeHtml(s).replace(/\n/g, "<br>");
+    }
+
+    // Usuń wizualne bullet-y z generatora
+    s = s.replace(/<span[^>]*class=["'][^"']*entry-bullet[^"']*["'][^>]*>.*?<\/span>\s*/gi, "");
+    // Usuń same znaki • na początku linii / po <br>
+    s = s.replace(/(^|<br\s*\/?>)\s*[•·]\s*/gi, "$1");
+
+    // Zostaw tylko bezpieczne tagi
+    s = s.replace(/<(?!\/?(?:b|strong|u|i|br)\b)[^>]*>/gi, "");
+
+    return s;
+}
+
 /** Sortuje wpisy od najstarszych do najmłodszych */
 function sortEntriesOldestFirst(entries) {
     return [...entries].sort((a, b) => {
@@ -114,7 +148,7 @@ function openKsiazkaSaveModal(tekst, patrolIndexes) {
             <div style="margin-bottom:16px;">
                 <label>Podgląd wpisu</label>
                 <div style="background:#0f172a; border:1px solid #334155; border-radius:10px; padding:12px; max-height:160px; overflow:auto; font-size:13px; white-space:pre-wrap; color:#e2e8f0;">
-${escapeHtml(tekst)}
+${formatKsiazkaTekstHtml(tekst)}
                 </div>
             </div>
 
@@ -191,7 +225,17 @@ async function confirmSaveToKsiazka() {
 function getGeneratedEntryPlainForKsiazka() {
     const el = document.getElementById("generatedEntry");
     if (!el) return "";
-    return (el.innerText || el.textContent || "").trim();
+
+    // Weź HTML z formatowaniem (pogrubienie itd.), bez kropek
+    if (el.getAttribute("contenteditable") === "true") {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll(".entry-bullet").forEach(n => n.remove());
+        let html = clone.innerHTML || "";
+        html = html.replace(/(^|<br\s*\/?>)\s*[•·]\s*/gi, "$1");
+        return html.trim();
+    }
+
+    return stripBulletsPlain(el.value || el.innerText || "");
 }
 
 (function patchGenerateEntry() {
@@ -370,7 +414,7 @@ function renderKsiazkaListView(entries) {
                 ${patrolLabel ? `<div class="ksiazka-patrol">${escapeHtml(patrolLabel)}</div>` : ""}
             </div>
             <div class="ksiazka-col-info">
-                <div class="ksiazka-text">${escapeHtml(entry.tekst)}</div>
+                <div class="ksiazka-text">${formatKsiazkaTekstHtml(entry.tekst)}</div>
             </div>
             <div class="ksiazka-col-actions">
                 ${!done ? `
@@ -432,7 +476,7 @@ function renderKsiazkaColumnsView(filtered) {
                         ${done ? "<span style='color:#4ade80;'>✅</span>" : (overdue ? "<span style='color:#f87171;'>⚠</span>" : "")}
                     </div>
                     <div style="font-size:13.5px; line-height:1.45; white-space:pre-wrap; color:#e2e8f0; margin-bottom:10px;">
-                        ${escapeHtml(entry.tekst)}
+                        ${formatKsiazkaTekstHtml(entry.tekst)}
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         ${!done ? `
@@ -500,9 +544,16 @@ async function kopiujWpisKsiazki(index) {
     ensureKsiazkaState();
     const e = appState.ksiazkaWydarzen[index];
     if (!e) return;
-    // Usuń kropki / bullet-y jak w generatorze – tylko do schowka
+
     let text = String(e.tekst || "");
-    text = text.split("\n").map(line => line.replace(/^[\s•·.\-–—]+/, "").trimStart()).join("\n").trim();
+    // HTML → zwykły tekst
+    if (/<[^>]+>/.test(text)) {
+        const tmp = document.createElement("div");
+        tmp.innerHTML = text;
+        text = tmp.innerText || tmp.textContent || "";
+    }
+    text = stripBulletsPlain(text);
+
     try {
         await navigator.clipboard.writeText(text);
         if (typeof showToast === "function") showToast("✅ Skopiowano");
@@ -1704,7 +1755,14 @@ async function exportKsiazkaFiltered() {
     const blocks = entries.map(e => {
         const data = String(e.data || "").trim() || "—";
         const godz = String(e.godzinaStart || "—").trim();
-        let tekst = String(e.tekst || "")
+        let tekst = String(e.tekst || "");
+        // HTML → zwykły tekst
+        if (/<[^>]+>/.test(tekst)) {
+            const tmp = document.createElement("div");
+            tmp.innerHTML = tekst;
+            tekst = tmp.innerText || tmp.textContent || "";
+        }
+        tekst = tekst
             .replace(/\r\n/g, "\n")
             // usuń typowe czarne kropki / punktory
             .replace(/[•·●▪▫○◦‣⁃∙]/g, "")
