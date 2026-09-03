@@ -359,6 +359,7 @@ function renderKsiazka() {
                 </div>
             </div>
             <div class="ksiazka-sticky-right">
+                <button class="btn-success" onclick="openKsiazkaAddModal()">➕ Dodaj wpis</button>
                 <button class="btn-primary" onclick="openPlanSluzbyModal()">📋 Planowanie</button>
                 <button class="btn-primary" onclick="openZapiszKsiazkeJakoSzablon()">💾 Zapisz książkę jako szablon</button>
                 <button class="btn-primary" onclick="openKsiazkaUwagiPicker()">Uwagi</button>
@@ -2228,6 +2229,422 @@ async function confirmKsiazkaUwagi() {
 }
 
 // =====================================
+// DODAJ WPIS – mini-generator w modalu
+// (zapis NIE zamyka okna – można dodać wiele wpisów)
+// =====================================
+
+const ksiazkaAdd = {
+    patrole: [],
+    zglIndexes: [],
+    polIndexes: [],
+    zglLine: null,
+    polLine: null,
+    zglOpis: null,
+    polOpis: null,
+    zglSearch: "",
+    polSearch: ""
+};
+
+function resetKsiazkaAddState() {
+    ksiazkaAdd.patrole = [];
+    ksiazkaAdd.zglIndexes = [];
+    ksiazkaAdd.polIndexes = [];
+    ksiazkaAdd.zglLine = null;
+    ksiazkaAdd.polLine = null;
+    ksiazkaAdd.zglOpis = null;
+    ksiazkaAdd.polOpis = null;
+    ksiazkaAdd.zglSearch = "";
+    ksiazkaAdd.polSearch = "";
+}
+
+function openKsiazkaAddModal() {
+    ensureKsiazkaState();
+    resetKsiazkaAddState();
+
+    const old = document.getElementById("ksiazkaAddModal");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "ksiazkaAddModal";
+    overlay.className = "modal-overlay";
+    overlay.style.cssText = "display:flex; align-items:stretch; justify-content:center; padding:12px;";
+    overlay.innerHTML = `
+        <div class="modal" style="width:min(1100px,96vw); height:min(90vh,900px); max-width:none; max-height:none; display:flex; flex-direction:column; padding:16px 18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+                <h2 style="margin:0;">➕ Dodaj wpis do Książki wydarzeń</h2>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <label style="font-size:13px; color:#94a3b8;">Godzina</label>
+                    <input type="time" id="ksAddGodzina" value="${escapeHtml(nowHHMM())}" style="width:130px;">
+                    <button class="btn-success" onclick="ksiazkaAddZapisz()">💾 Zapisz</button>
+                    <button class="btn-danger" onclick="closeKsiazkaAddModal()">Zamknij</button>
+                </div>
+            </div>
+            <p style="margin:0 0 10px 0; font-size:13px; color:#94a3b8;">
+                Wybierz patrole, zgłoszenia i polecenia – podgląd odświeża się na żywo. Możesz edytować tekst. <strong>Zapisz</strong> dodaje wpis i zostawia okno otwarte (kolejne wpisy). <strong>Zamknij</strong> zamyka okno.
+            </p>
+            <div style="flex:1; overflow:auto; display:flex; flex-direction:column; gap:12px; min-height:0;">
+                <div>
+                    <div style="font-weight:600; margin-bottom:6px; font-size:14px;">Patrole</div>
+                    <div id="ksAddPatrole" class="card-grid" style="gap:6px;"></div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                    <div>
+                        <div style="font-weight:600; margin-bottom:6px; font-size:14px;">Zgłoszenia</div>
+                        <input type="text" id="ksAddZglSearch" placeholder="Szukaj…" style="width:100%; margin-bottom:8px;"
+                               oninput="ksiazkaAdd.zglSearch=this.value; ksiazkaAddRenderZgl();">
+                        <div id="ksAddZglLinie" class="card-grid" style="gap:6px; margin-bottom:8px;"></div>
+                        <div id="ksAddZglItems" class="card-grid" style="gap:6px; margin-bottom:8px;"></div>
+                        <div id="ksAddZglLevel3" class="card-grid" style="gap:6px;"></div>
+                    </div>
+                    <div>
+                        <div style="font-weight:600; margin-bottom:6px; font-size:14px;">Polecenia</div>
+                        <input type="text" id="ksAddPolSearch" placeholder="Szukaj…" style="width:100%; margin-bottom:8px;"
+                               oninput="ksiazkaAdd.polSearch=this.value; ksiazkaAddRenderPol();">
+                        <div id="ksAddPolLinie" class="card-grid" style="gap:6px; margin-bottom:8px;"></div>
+                        <div id="ksAddPolItems" class="card-grid" style="gap:6px; margin-bottom:8px;"></div>
+                        <div id="ksAddPolLevel3" class="card-grid" style="gap:6px;"></div>
+                    </div>
+                </div>
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <div style="font-weight:600; font-size:14px;">Podgląd wpisu (edytowalny)</div>
+                        <button class="btn-primary" style="padding:4px 10px; font-size:12px;" onclick="ksiazkaAddWyczyscWybor()">Wyczyść wybór</button>
+                    </div>
+                    <div id="ksAddPreview" contenteditable="true"
+                         style="min-height:140px; max-height:220px; overflow:auto; background:#0f172a; border:1px solid #334155; border-radius:10px; padding:12px; font-size:14px; line-height:1.45; color:#e2e8f0; white-space:pre-wrap;"></div>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px; flex-wrap:wrap;">
+                <button class="btn-success" onclick="ksiazkaAddZapisz()">💾 Zapisz do książki</button>
+                <button class="btn-danger" onclick="closeKsiazkaAddModal()">Zamknij okno</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // responsywność: na wąskim ekranie 1 kolumna
+    const style = document.createElement("style");
+    style.textContent = `@media (max-width:800px){ #ksiazkaAddModal .modal > div[style*="grid-template-columns"]{ grid-template-columns:1fr !important; } }`;
+    overlay.appendChild(style);
+
+    ksiazkaAddRenderAll();
+}
+
+function closeKsiazkaAddModal() {
+    const m = document.getElementById("ksiazkaAddModal");
+    if (m) m.remove();
+    resetKsiazkaAddState();
+}
+
+function ksiazkaAddRenderAll() {
+    ksiazkaAddRenderPatrole();
+    ksiazkaAddRenderZgl();
+    ksiazkaAddRenderPol();
+    ksiazkaAddUpdatePreview();
+}
+
+function ksiazkaAddRenderPatrole() {
+    const el = document.getElementById("ksAddPatrole");
+    if (!el) return;
+    const list = appState.patrole || [];
+    if (!list.length) {
+        el.innerHTML = "<span style='color:#64748b; font-size:13px;'>Brak patroli</span>";
+        return;
+    }
+    el.innerHTML = list.map((p, i) => {
+        const active = ksiazkaAdd.patrole.includes(i) ? "active" : "";
+        return `<div class="line-pill ${active}" style="cursor:pointer;" onclick="ksiazkaAddTogglePatrol(${i})">${escapeHtml(p.nazwa || ("Patrol " + (i + 1)))}</div>`;
+    }).join("");
+}
+
+function ksiazkaAddTogglePatrol(i) {
+    const pos = ksiazkaAdd.patrole.indexOf(i);
+    if (pos > -1) ksiazkaAdd.patrole.splice(pos, 1);
+    else ksiazkaAdd.patrole.push(i);
+    ksiazkaAddRenderPatrole();
+    ksiazkaAddUpdatePreview();
+}
+
+function ksiazkaAddRowMatches(row, search) {
+    if (!search) return true;
+    const t = `${row.Linia || ""} ${row.OpisKrotki || ""} ${row.OpisPom || ""} ${row.Opis || ""} ${row.Nazwa || ""} ${row.NazwaSzlaku || ""} ${row.KmOd || ""} ${row.KmDo || ""} ${row.Km || ""} ${row.Rodzaj || ""}`.toLowerCase();
+    return t.includes(String(search).toLowerCase().trim());
+}
+
+function ksiazkaAddRenderZgl() {
+    const linieEl = document.getElementById("ksAddZglLinie");
+    const itemsEl = document.getElementById("ksAddZglItems");
+    const lvl3El = document.getElementById("ksAddZglLevel3");
+    if (!linieEl || !itemsEl || !lvl3El) return;
+
+    const allRows = (appState.zgloszenia?.rows || []).map((r, i) => ({ ...r, _index: i }));
+    const search = ksiazkaAdd.zglSearch;
+    let rows = search ? allRows.filter(r => ksiazkaAddRowMatches(r, search)) : allRows;
+
+    const lines = [...new Set(rows.map(r => r.Linia || "(brak)"))].sort((a, b) => a.localeCompare(b, "pl"));
+    linieEl.innerHTML = lines.map(line => {
+        const hasSel = rows.some(r => (r.Linia || "(brak)") === line && ksiazkaAdd.zglIndexes.includes(r._index));
+        let cls = "line-pill";
+        if (ksiazkaAdd.zglLine === line) cls += " active";
+        if (hasSel) cls += " has-selected";
+        return `<div class="${cls}" style="cursor:pointer;" onclick="ksiazkaAddSelectZglLine('${String(line).replace(/'/g, "\\'")}')">${escapeHtml(line)}</div>`;
+    }).join("") || "<span style='color:#64748b;font-size:13px;'>Brak</span>";
+
+    if (!ksiazkaAdd.zglLine && !search) {
+        itemsEl.innerHTML = "";
+        lvl3El.innerHTML = "";
+        return;
+    }
+
+    let filtered = rows;
+    if (ksiazkaAdd.zglLine) filtered = filtered.filter(r => (r.Linia || "(brak)") === ksiazkaAdd.zglLine);
+
+    const krotkie = [...new Set(filtered.map(r => r.OpisKrotki || "(bez opisu)"))].sort((a, b) => a.localeCompare(b, "pl"));
+    itemsEl.innerHTML = krotkie.map(k => {
+        const hasSel = filtered.some(r => (r.OpisKrotki || "(bez opisu)") === k && ksiazkaAdd.zglIndexes.includes(r._index));
+        let cls = "item-card";
+        if (ksiazkaAdd.zglOpis === k) cls += " selected";
+        if (hasSel) cls += " has-selected";
+        return `<div class="${cls}" style="cursor:pointer;" onclick="ksiazkaAddSelectZglOpis('${String(k).replace(/'/g, "\\'")}')">${escapeHtml(k)}</div>`;
+    }).join("") || "";
+
+    if (!ksiazkaAdd.zglOpis) {
+        lvl3El.innerHTML = "";
+        return;
+    }
+
+    const level3 = filtered.filter(r => (r.OpisKrotki || "(bez opisu)") === ksiazkaAdd.zglOpis);
+    lvl3El.innerHTML = level3.map(r => {
+        const sel = ksiazkaAdd.zglIndexes.includes(r._index) ? "selected" : "";
+        const label = (r.OpisPom || r.Opis || "(brak)").substring(0, 120);
+        return `<div class="item-card ${sel}" style="cursor:pointer;" onclick="ksiazkaAddToggleZgl(${r._index})">${escapeHtml(label)}</div>`;
+    }).join("") || "";
+}
+
+function ksiazkaAddSelectZglLine(line) {
+    if (ksiazkaAdd.zglLine === line) {
+        ksiazkaAdd.zglLine = null;
+        ksiazkaAdd.zglOpis = null;
+    } else {
+        ksiazkaAdd.zglLine = line;
+        ksiazkaAdd.zglOpis = null;
+    }
+    ksiazkaAddRenderZgl();
+}
+
+function ksiazkaAddSelectZglOpis(k) {
+    ksiazkaAdd.zglOpis = (ksiazkaAdd.zglOpis === k) ? null : k;
+    ksiazkaAddRenderZgl();
+}
+
+function ksiazkaAddToggleZgl(i) {
+    const pos = ksiazkaAdd.zglIndexes.indexOf(i);
+    if (pos > -1) ksiazkaAdd.zglIndexes.splice(pos, 1);
+    else ksiazkaAdd.zglIndexes.push(i);
+    ksiazkaAddRenderZgl();
+    ksiazkaAddUpdatePreview();
+}
+
+function ksiazkaAddRenderPol() {
+    const linieEl = document.getElementById("ksAddPolLinie");
+    const itemsEl = document.getElementById("ksAddPolItems");
+    const lvl3El = document.getElementById("ksAddPolLevel3");
+    if (!linieEl || !itemsEl || !lvl3El) return;
+
+    const allRows = (appState.polecenia?.rows || []).map((r, i) => ({ ...r, _index: i }));
+    const search = ksiazkaAdd.polSearch;
+    let rows = search ? allRows.filter(r => ksiazkaAddRowMatches(r, search)) : allRows;
+
+    const lines = [...new Set(rows.map(r => r.Linia || "(brak)"))].sort((a, b) => a.localeCompare(b, "pl"));
+    linieEl.innerHTML = lines.map(line => {
+        const hasSel = rows.some(r => (r.Linia || "(brak)") === line && ksiazkaAdd.polIndexes.includes(r._index));
+        let cls = "line-pill";
+        if (ksiazkaAdd.polLine === line) cls += " active";
+        if (hasSel) cls += " has-selected";
+        return `<div class="${cls}" style="cursor:pointer;" onclick="ksiazkaAddSelectPolLine('${String(line).replace(/'/g, "\\'")}')">${escapeHtml(line)}</div>`;
+    }).join("") || "<span style='color:#64748b;font-size:13px;'>Brak</span>";
+
+    if (!ksiazkaAdd.polLine && !search) {
+        itemsEl.innerHTML = "";
+        lvl3El.innerHTML = "";
+        return;
+    }
+
+    let filtered = rows;
+    if (ksiazkaAdd.polLine) filtered = filtered.filter(r => (r.Linia || "(brak)") === ksiazkaAdd.polLine);
+
+    const krotkie = [...new Set(filtered.map(r => r.OpisKrotki || "(bez opisu)"))].sort((a, b) => a.localeCompare(b, "pl"));
+    itemsEl.innerHTML = krotkie.map(k => {
+        const hasSel = filtered.some(r => (r.OpisKrotki || "(bez opisu)") === k && ksiazkaAdd.polIndexes.includes(r._index));
+        let cls = "item-card";
+        if (ksiazkaAdd.polOpis === k) cls += " selected";
+        if (hasSel) cls += " has-selected";
+        return `<div class="${cls}" style="cursor:pointer;" onclick="ksiazkaAddSelectPolOpis('${String(k).replace(/'/g, "\\'")}')">${escapeHtml(k)}</div>`;
+    }).join("") || "";
+
+    if (!ksiazkaAdd.polOpis) {
+        lvl3El.innerHTML = "";
+        return;
+    }
+
+    const level3 = filtered.filter(r => (r.OpisKrotki || "(bez opisu)") === ksiazkaAdd.polOpis);
+    lvl3El.innerHTML = level3.map(r => {
+        const sel = ksiazkaAdd.polIndexes.includes(r._index) ? "selected" : "";
+        const label = (r.OpisPom || r.Opis || "(brak)").substring(0, 120);
+        return `<div class="item-card ${sel}" style="cursor:pointer;" onclick="ksiazkaAddTogglePol(${r._index})">${escapeHtml(label)}</div>`;
+    }).join("") || "";
+}
+
+function ksiazkaAddSelectPolLine(line) {
+    if (ksiazkaAdd.polLine === line) {
+        ksiazkaAdd.polLine = null;
+        ksiazkaAdd.polOpis = null;
+    } else {
+        ksiazkaAdd.polLine = line;
+        ksiazkaAdd.polOpis = null;
+    }
+    ksiazkaAddRenderPol();
+}
+
+function ksiazkaAddSelectPolOpis(k) {
+    ksiazkaAdd.polOpis = (ksiazkaAdd.polOpis === k) ? null : k;
+    ksiazkaAddRenderPol();
+}
+
+function ksiazkaAddTogglePol(i) {
+    const pos = ksiazkaAdd.polIndexes.indexOf(i);
+    if (pos > -1) ksiazkaAdd.polIndexes.splice(pos, 1);
+    else ksiazkaAdd.polIndexes.push(i);
+    ksiazkaAddRenderPol();
+    ksiazkaAddUpdatePreview();
+}
+
+function ksiazkaAddWyczyscWybor() {
+    ksiazkaAdd.zglIndexes = [];
+    ksiazkaAdd.polIndexes = [];
+    ksiazkaAdd.zglOpis = null;
+    ksiazkaAdd.polOpis = null;
+    const prev = document.getElementById("ksAddPreview");
+    if (prev) prev.innerHTML = "";
+    ksiazkaAddRenderZgl();
+    ksiazkaAddRenderPol();
+}
+
+/** Buduje tekst z wybranych kafelków – używa logiki generatora (tagi @patrol itd.) */
+function ksiazkaAddBuildTekstHtml() {
+    const parts = [];
+    const prevPatrols = (typeof selectedPatrols !== "undefined") ? [...selectedPatrols] : null;
+    const prevAssign = (typeof patrolAssignments !== "undefined") ? patrolAssignments : null;
+
+    try {
+        if (typeof selectedPatrols !== "undefined") selectedPatrols = [...ksiazkaAdd.patrole];
+        if (typeof patrolAssignments !== "undefined") patrolAssignments = {};
+
+        const handle = (indexes, rows) => {
+            indexes.forEach(i => {
+                const t = rows?.[i]?.Opis;
+                if (!t) return;
+                let text = t;
+                if (typeof applyTextWithPatrolOccurrences === "function") {
+                    text = applyTextWithPatrolOccurrences(t, typeof buildSequentialOccurrenceList === "function" ? buildSequentialOccurrenceList(t) : null);
+                }
+                parts.push(String(text).trim());
+            });
+        };
+
+        handle(ksiazkaAdd.zglIndexes, appState.zgloszenia?.rows);
+        handle(ksiazkaAdd.polIndexes, appState.polecenia?.rows);
+    } finally {
+        if (prevPatrols && typeof selectedPatrols !== "undefined") selectedPatrols = prevPatrols;
+        if (prevAssign !== null && typeof patrolAssignments !== "undefined") patrolAssignments = prevAssign;
+    }
+
+    const items = parts.filter(Boolean);
+    if (!items.length) return "";
+
+    // Bez kropek w książce – same linie
+    const plain = items.join("\n");
+    if (typeof plainTextToHtml === "function") {
+        // plainTextToHtml dodaje bullet-y – usuwamy je później przez formatKsiazkaTekstHtml
+        return plainTextToHtml(plain);
+    }
+    return escapeHtml(plain).replace(/\n/g, "<br>");
+}
+
+function ksiazkaAddUpdatePreview() {
+    const el = document.getElementById("ksAddPreview");
+    if (!el) return;
+    // Nie nadpisuj, jeśli użytkownik właśnie edytuje ręcznie i nie ma zaznaczonych kafelków
+    const html = ksiazkaAddBuildTekstHtml();
+    if (html) {
+        el.innerHTML = formatKsiazkaTekstHtml(html);
+    } else if (!ksiazkaAdd.zglIndexes.length && !ksiazkaAdd.polIndexes.length) {
+        // zostaw ręczną edycję, chyba że pusto po wyczyszczeniu
+        if (!(el.innerText || "").trim()) el.innerHTML = "";
+    }
+}
+
+function ksiazkaAddGetPreviewContent() {
+    const el = document.getElementById("ksAddPreview");
+    if (!el) return "";
+    // Preferuj HTML (styl), bez kropek
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll(".entry-bullet").forEach(n => n.remove());
+    let html = clone.innerHTML || "";
+    html = html.replace(/(^|<br\s*\/?>)\s*[•·]\s*/gi, "$1");
+    if (html.trim()) return html.trim();
+    return stripBulletsPlain(el.innerText || "");
+}
+
+async function ksiazkaAddZapisz() {
+    ensureKsiazkaState();
+
+    const tekst = ksiazkaAddGetPreviewContent();
+    if (!tekst || !String(tekst).replace(/<[^>]+>/g, "").trim()) {
+        if (typeof showToast === "function") showToast("Brak treści wpisu");
+        else alert("Brak treści wpisu – wybierz kafelki lub wpisz tekst");
+        return;
+    }
+
+    const godzStart = document.getElementById("ksAddGodzina")?.value || nowHHMM();
+    const parts = parseTimeParts(godzStart);
+    let dataWpisu = todayPL();
+    if (parts) {
+        const now = new Date();
+        const currentHour = now.getHours();
+        if (currentHour >= 18 && parts.h < 12) {
+            dataWpisu = tomorrowPL();
+        }
+    }
+
+    appState.ksiazkaWydarzen.push({
+        id: Date.now() + Math.random().toString(36).slice(2),
+        data: dataWpisu,
+        godzinaStart: godzStart,
+        tekst: tekst,
+        patrole: [...ksiazkaAdd.patrole],
+        zrobione: false,
+        createdAt: new Date().toISOString()
+    });
+
+    await saveState();
+    renderKsiazka();
+
+    // Zostaw okno otwarte – wyczyść tylko treść/wybór kafelków, patrole i godzinę zostaw
+    ksiazkaAdd.zglIndexes = [];
+    ksiazkaAdd.polIndexes = [];
+    ksiazkaAdd.zglOpis = null;
+    ksiazkaAdd.polOpis = null;
+    const prev = document.getElementById("ksAddPreview");
+    if (prev) prev.innerHTML = "";
+    ksiazkaAddRenderZgl();
+    ksiazkaAddRenderPol();
+
+    if (typeof showToast === "function") showToast("✅ Zapisano – możesz dodać kolejny");
+    else alert("Zapisano – możesz dodać kolejny");
+}
+
+// =====================================
 // EXPOSE
 // =====================================
 window.initKsiazka = initKsiazka;
@@ -2297,3 +2714,17 @@ window.ksiazkaUwagiWybrano = ksiazkaUwagiWybrano;
 window.ksiazkaUwagiDodajSzablon = ksiazkaUwagiDodajSzablon;
 window.closeKsiazkaUwagiEditModal = closeKsiazkaUwagiEditModal;
 window.confirmKsiazkaUwagi = confirmKsiazkaUwagi;
+
+window.openKsiazkaAddModal = openKsiazkaAddModal;
+window.closeKsiazkaAddModal = closeKsiazkaAddModal;
+window.ksiazkaAddTogglePatrol = ksiazkaAddTogglePatrol;
+window.ksiazkaAddSelectZglLine = ksiazkaAddSelectZglLine;
+window.ksiazkaAddSelectZglOpis = ksiazkaAddSelectZglOpis;
+window.ksiazkaAddToggleZgl = ksiazkaAddToggleZgl;
+window.ksiazkaAddSelectPolLine = ksiazkaAddSelectPolLine;
+window.ksiazkaAddSelectPolOpis = ksiazkaAddSelectPolOpis;
+window.ksiazkaAddTogglePol = ksiazkaAddTogglePol;
+window.ksiazkaAddWyczyscWybor = ksiazkaAddWyczyscWybor;
+window.ksiazkaAddZapisz = ksiazkaAddZapisz;
+window.ksiazkaAddRenderZgl = ksiazkaAddRenderZgl;
+window.ksiazkaAddRenderPol = ksiazkaAddRenderPol;
